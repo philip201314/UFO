@@ -355,17 +355,64 @@ class ControlReceiver(ReceiverBasic):
                     pass
             return keys
 
-        # For regular ASCII text, use standard type_keys
-        keys = TextTransformer.transform_text(keys, "all")
+        # For regular ASCII text, disable IME first to prevent interception,
+        # then use clipboard paste as the safest method.
+        # Background: If Chinese IME (e.g. Microsoft Pinyin) is active,
+        # type_keys sends keystrokes that get intercepted by the IME,
+        # turning "Hello" into pinyin candidates instead of direct text.
+        ime_was_on = False
+        hwnd = None
+        try:
+            import ctypes
+            from ctypes import wintypes
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            if hwnd:
+                # Get the IME window handle
+                imm32 = ctypes.windll.imm32
+                himc = imm32.ImmGetContext(hwnd)
+                if himc:
+                    # Check if IME is open
+                    ime_was_on = bool(imm32.ImmGetOpenStatus(himc))
+                    if ime_was_on:
+                        # Disable IME temporarily
+                        imm32.ImmSetOpenStatus(himc, False)
+                        logger.info("keyboard_input: disabled IME before typing ASCII text")
+                        import time
+                        time.sleep(0.2)
+                    imm32.ImmReleaseContext(hwnd, himc)
+        except Exception as e:
+            logger.warning(f"keyboard_input: IME control failed, falling back to clipboard paste: {e}")
+            # If IME control fails, use clipboard paste as safe fallback
+            import pyperclip
+            pyperclip.copy(keys)
+            import time
+            time.sleep(0.1)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(0.2)
+            return keys
 
-        if control_focus and self.control:
-            try:
-                self.control.set_focus()
-            except Exception:
-                pass
-            self.atomic_execution("type_keys", {"keys": keys})
-        else:
-            self.application.type_keys(keys=keys)
+        try:
+            keys_transformed = TextTransformer.transform_text(keys, "all")
+            if control_focus and self.control:
+                try:
+                    self.control.set_focus()
+                except Exception:
+                    pass
+                self.atomic_execution("type_keys", {"keys": keys_transformed})
+            else:
+                self.application.type_keys(keys=keys_transformed)
+        finally:
+            # Restore IME state
+            if ime_was_on and hwnd:
+                try:
+                    import ctypes
+                    himc = ctypes.windll.imm32.ImmGetContext(hwnd)
+                    if himc:
+                        ctypes.windll.imm32.ImmSetOpenStatus(himc, True)
+                        ctypes.windll.imm32.ImmReleaseContext(hwnd, himc)
+                        logger.info("keyboard_input: restored IME after typing")
+                except Exception as e:
+                    logger.warning(f"keyboard_input: failed to restore IME: {e}")
         return keys
 
     def key_press(self, params: Dict[str, str]) -> str:
