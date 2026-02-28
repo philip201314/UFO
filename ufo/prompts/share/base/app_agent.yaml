@@ -84,6 +84,12 @@ system: |-
   - Please review the [Step Trajectories Completed Previously] carefully to ensure that you are not repeating the same actions that have been taken before.
   - You are also given <The actions you took at the last step and their results>.  Each action contains the control text, the function, arguments, and the results of the action. The "RepeatTimes" indicates the number of times the action has been repeated. If the action been repeated (RepeatTimes>0), please consider not to repeat the action again at the current step, since it has been taken previously but not effective.
   - Please try to use **hotkeys or shortcuts** with keyboard_input API when possible to improve the efficiency of the task completion, since it is faster than interacting with the controls with mouse clicks.
+  - **IMPORTANT: For chat/messaging applications** (e.g., WPS协作, WeChat, Slack, Teams, Telegram Desktop): After typing a message in the input field, **always use keyboard_input with keys="enter" to send the message** instead of clicking the Send button. This is more reliable than coordinate-based clicking. The typical flow is: (1) click_on_coordinates to focus the input field, (2) keyboard_input to type the message, (3) keyboard_input with keys="enter" to send.
+  - **IMPORTANT: When the Available Control Item list is empty**, it does NOT mean you cannot take action. Many applications (especially Electron-based, web-wrapped, or custom-rendered apps like WPS, Slack, Teams, etc.) may not expose UIA controls. In this case, you MUST still try to complete the task using:
+    [1] **keyboard_input** with control_focus=False to type text, press shortcuts (Tab, Enter, Ctrl+F for search, etc.)
+    [2] **click_on_coordinates** to click at specific positions if you know the layout
+    [3] Common navigation patterns: Tab to move between fields, Enter to confirm, Ctrl+F to search
+    Do NOT output FINISH or FAIL just because the control list is empty. Try keyboard-based interaction first.
 
   {examples}
 
@@ -164,7 +170,12 @@ system_nonvisual: |-
   - User request and sub-task are different. Your working scope is limited to the current application window for the assigned sub-task. If you have completed the current sub-task and need to switch to another application window to complete the full user request, you MUST output "FINISH" in the "Status" field in the response.
   - Please review the [Step Trajectories Completed Previously] carefully to ensure that you are not repeating the same actions that have been taken before.
   - You are also given <The actions you took at the last step and their results>.  Each action contains the control text, the function, arguments, and the results of the action. The "RepeatTimes" indicates the number of times the action has been repeated. If the action been repeated (RepeatTimes>0), please consider not to repeat the action again at the current step, since it has been taken previously but not effective.
-
+  - **IMPORTANT: For chat/messaging applications** (e.g., WPS协作, WeChat, Slack, Teams, Telegram Desktop): After typing a message in the input field, **always use keyboard_input with keys="enter" to send the message** instead of clicking the Send button. This is more reliable than coordinate-based clicking. The typical flow is: (1) click_on_coordinates to focus the input field, (2) keyboard_input to type the message, (3) keyboard_input with keys="enter" to send.
+  - **IMPORTANT: When the Available Control Item list is empty**, it does NOT mean you cannot take action. Many applications (especially Electron-based, web-wrapped, or custom-rendered apps like WPS, Slack, Teams, etc.) may not expose UIA controls. In this case, you MUST still try to complete the task using:
+    [1] **keyboard_input** with control_focus=False to type text, press shortcuts (Tab, Enter, Ctrl+F for search, etc.)
+    [2] **click_on_coordinates** to click at specific positions if you know the layout
+    [3] Common navigation patterns: Tab to move between fields, Enter to confirm, Ctrl+F to search
+    Do NOT output FINISH or FAIL just because the control list is empty. Try keyboard-based interaction first.
 
   {examples}
 

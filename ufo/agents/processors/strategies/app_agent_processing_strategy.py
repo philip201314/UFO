@@ -420,7 +420,13 @@ class AppControlInfoStrategy(BaseProcessingStrategy):
             # Step 1: Getting control info from UIA
             if "uia" in self.control_detection_backend:
                 self.logger.info("Collecting Control Information from UIA API...")
-                api_control_list = await self._collect_uia_controls(command_dispatcher)
+                try:
+                    api_control_list = await self._collect_uia_controls(command_dispatcher)
+                    if api_control_list is None:
+                        api_control_list = []
+                except Exception as uia_err:
+                    self.logger.warning(f"UIA control collection failed: {uia_err}")
+                    api_control_list = []
                 self.control_recorder.uia_controls_info = api_control_list
 
                 self.logger.info(
@@ -1193,13 +1199,53 @@ class AppLLMInteractionStrategy(BaseProcessingStrategy):
     ) -> AppAgentResponse:
         """
         Parse LLM response into structured AppAgentResponse.
+        Handles the conversion from flat LLM response format (ControlLabel, Function, Args)
+        to the nested AppAgentResponse format (action: ActionCommandInfo).
         :param agent: The AppAgent instance
         :param response_text: Raw response text
         :return: Parsed AppAgentResponse
         """
         try:
-            # Parse response to dictionary
+            # Parse response to dictionary (keys are already normalized to lowercase/snake_case)
             response_dict = agent.response_to_dict(response_text)
+
+            self.logger.info(f"Parsed response dict keys: {list(response_dict.keys())}")
+
+            # Convert flat LLM response format to nested action format
+            # LLM returns: function, args, control_label, control_text (flat)
+            # AppAgentResponse expects: action (ActionCommandInfo with function, arguments, target)
+            func_name = response_dict.get("function") or response_dict.get("Function") or ""
+            if "action" not in response_dict and func_name:
+                action_dict = {
+                    "function": func_name,
+                    "arguments": response_dict.pop("args", response_dict.pop("arguments", {})),
+                    "status": response_dict.get("status", "CONTINUE"),
+                }
+                # Remove function from top-level to avoid confusion
+                response_dict.pop("function", None)
+                response_dict.pop("Function", None)
+
+                # Build target from control_label and control_text
+                control_label = (
+                    response_dict.pop("control_label", None)
+                    or response_dict.pop("ControlLabel", None)
+                    or response_dict.pop("controlLabel", None)
+                )
+                control_text = (
+                    response_dict.pop("control_text", None)
+                    or response_dict.pop("ControlText", None)
+                    or response_dict.pop("controlText", None)
+                )
+                if control_label:
+                    action_dict["target"] = {
+                        "kind": "control",
+                        "name": control_text or "",
+                        "id": str(control_label),
+                    }
+                response_dict["action"] = action_dict
+                self.logger.info(f"Converted flat response to action: function={func_name}, target_id={control_label}")
+            else:
+                self.logger.info(f"action key present: {'action' in response_dict}, function found: {bool(func_name)}")
 
             # Create structured response
             parsed_response = AppAgentResponse.model_validate(response_dict)
@@ -1361,15 +1407,68 @@ class AppActionExecutionStrategy(BaseProcessingStrategy):
         except Exception as e:
             raise Exception(f"Failed to execute app action: {str(e)}")
 
+    # MCP AppAgent action tools that require id/name parameters
+    _CONTROL_TARGETED_TOOLS = {
+        "click_input", "set_edit_text", "keyboard_input",
+        "wheel_mouse_input", "scroll",
+    }
+
+    # Parameter alias mapping: LLMs (especially Qwen) sometimes use
+    # alternative parameter names. Map them to the expected MCP tool names.
+    _PARAM_ALIASES: Dict[str, Dict[str, str]] = {
+        "keyboard_input": {
+            "text": "keys",       # Qwen often uses 'text' instead of 'keys'
+            "input": "keys",      # Another common alias
+            "content": "keys",    # Another common alias
+            "value": "keys",      # Another common alias
+        },
+        "set_edit_text": {
+            "content": "text",    # Alias for set_edit_text
+            "value": "text",
+            "input": "text",
+        },
+        "click_on_coordinates": {
+            "click_x": "x",      # Alias for coordinates
+            "click_y": "y",
+            "pos_x": "x",
+            "pos_y": "y",
+        },
+    }
+
     def _action_to_command(self, action: ActionCommandInfo) -> Command:
         """
         Convert ActionCommandInfo to Command for execution.
+        Merges target id/name into parameters so MCP tools receive them.
+        For control-targeted tools, provides empty defaults when no target.
+        Normalizes parameter names using _PARAM_ALIASES for LLM compatibility.
         :param action: ActionCommandInfo object
         :return: Command object
         """
+        params = dict(action.arguments or {})
+
+        # --- Parameter alias normalization ---
+        # LLMs like Qwen sometimes use 'text' instead of 'keys' for keyboard_input.
+        # Map known aliases to the correct parameter names expected by MCP tools.
+        aliases = self._PARAM_ALIASES.get(action.function, {})
+        for wrong_name, correct_name in aliases.items():
+            if wrong_name in params and correct_name not in params:
+                params[correct_name] = params.pop(wrong_name)
+
+        # MCP tools like set_edit_text, click_input, keyboard_input require
+        # 'id' and 'name' as top-level parameters. Merge from action.target.
+        if action.target:
+            if action.target.id and "id" not in params:
+                params["id"] = action.target.id
+            if action.target.name and "name" not in params:
+                params["name"] = action.target.name
+        elif action.function in self._CONTROL_TARGETED_TOOLS:
+            # Provide empty defaults for MCP tools that require id/name
+            # This enables keyboard_input with control_focus=False on empty control lists
+            params.setdefault("id", "")
+            params.setdefault("name", "")
         return Command(
             tool_name=action.function,
-            parameters=action.arguments or {},
+            parameters=params,
             tool_type="action",
         )
 

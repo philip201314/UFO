@@ -113,23 +113,45 @@ class ControlReceiver(ReceiverBasic):
     def click_on_coordinates(self, params: Dict[str, str]) -> str:
         """
         Click on the coordinates of the control element.
+        Accepts both fractional coordinates (0.0-1.0) and pixel coordinates (>1).
+        Pixel coordinates are auto-converted to fractional using window dimensions.
         :param params: The arguments of the click on coordinates method.
         :return: The result of the click on coordinates action.
         """
 
-        # Get the relative coordinates fraction of the application window.
         x = float(params.get("x", 0))
         y = float(params.get("y", 0))
 
         button = params.get("button", "left")
         double = params.get("double", False)
 
+        # Auto-detect if coordinates are pixel values (>1) vs fractional (0-1)
+        if x > 1.0 or y > 1.0:
+            logger.info(
+                f"click_on_coordinates: detected pixel coords ({x}, {y}), "
+                f"converting to fractional coordinates"
+            )
+            application_rect: RECT = self.application.rectangle()
+            app_width = application_rect.width()
+            app_height = application_rect.height()
+            if app_width > 0 and app_height > 0:
+                x = x / app_width
+                y = y / app_height
+                # Clamp to [0, 1]
+                x = max(0.0, min(1.0, x))
+                y = max(0.0, min(1.0, y))
+                logger.info(f"click_on_coordinates: fractional coords = ({x:.4f}, {y:.4f})")
+            else:
+                logger.warning(f"click_on_coordinates: window dimensions invalid ({app_width}x{app_height})")
+
         # Get the absolute coordinates of the application window.
         tranformed_x, tranformed_y = self.transform_point(x, y)
 
-        # print(f"Clicking on {tranformed_x}, {tranformed_y}")
+        logger.info(f"click_on_coordinates: clicking at screen ({tranformed_x}, {tranformed_y})")
 
         self.application.set_focus()
+        import time
+        time.sleep(0.2)
 
         pyautogui.click(
             tranformed_x, tranformed_y, button=button, clicks=2 if double else 1
@@ -239,16 +261,108 @@ class ControlReceiver(ReceiverBasic):
     def keyboard_input(self, params: Dict[str, str]) -> str:
         """
         Keyboard input on the control element.
+        Handles Chinese/CJK text via clipboard paste, special key names
+        (enter, tab, escape, etc.), and ensures proper window focus.
         :param params: The arguments of the keyboard input method.
         :return: The result of the keyboard input action.
         """
 
         control_focus = params.get("control_focus", True)
         keys = params.get("keys", "")
+
+        # Map common LLM key names to pywinauto key syntax
+        SPECIAL_KEY_MAP = {
+            "enter": "{ENTER}", "return": "{ENTER}",
+            "tab": "{TAB}", "escape": "{ESCAPE}", "esc": "{ESCAPE}",
+            "backspace": "{BACKSPACE}", "delete": "{DELETE}", "del": "{DELETE}",
+            "up": "{UP}", "down": "{DOWN}", "left": "{LEFT}", "right": "{RIGHT}",
+            "home": "{HOME}", "end": "{END}",
+            "pageup": "{PGUP}", "pagedown": "{PGDN}",
+            "space": " ", "f1": "{F1}", "f2": "{F2}", "f3": "{F3}",
+            "f4": "{F4}", "f5": "{F5}", "f6": "{F6}", "f7": "{F7}",
+            "f8": "{F8}", "f9": "{F9}", "f10": "{F10}", "f11": "{F11}", "f12": "{F12}",
+        }
+
+        # Always ensure window is focused first
+        try:
+            self.application.set_focus()
+            import time
+            time.sleep(0.3)
+        except Exception as e:
+            logger.warning(f"Failed to set application focus: {e}")
+
+        # Check if keys is a special key name (case-insensitive)
+        keys_lower = keys.strip().lower()
+        if keys_lower in SPECIAL_KEY_MAP:
+            mapped_key = SPECIAL_KEY_MAP[keys_lower]
+            logger.info(f"keyboard_input: special key '{keys}' -> '{mapped_key}'")
+            if control_focus and self.control:
+                try:
+                    self.control.set_focus()
+                except Exception:
+                    pass
+                self.atomic_execution("type_keys", {"keys": mapped_key})
+            else:
+                self.application.type_keys(keys=mapped_key)
+            return keys
+
+        # Check if keys is a compound key combination like ctrl+a, alt+tab, ctrl+shift+s
+        MODIFIER_MAP = {"ctrl": "ctrl", "control": "ctrl", "alt": "alt", "shift": "shift", "win": "win", "command": "win"}
+        if "+" in keys_lower and len(keys_lower) < 30:
+            parts = [p.strip() for p in keys_lower.split("+")]
+            # Check if at least the first part is a modifier key
+            if parts[0] in MODIFIER_MAP:
+                # Map modifier names and the final key
+                hotkey_parts = []
+                for i, part in enumerate(parts):
+                    if part in MODIFIER_MAP:
+                        hotkey_parts.append(MODIFIER_MAP[part])
+                    elif part in SPECIAL_KEY_MAP:
+                        # Map special key names like "tab" -> "tab" for pyautogui
+                        hotkey_parts.append(part)  # pyautogui uses lowercase names
+                    else:
+                        hotkey_parts.append(part)  # single char like 'a', 'c', 'v', etc.
+                logger.info(f"keyboard_input: compound hotkey '{keys}' -> pyautogui.hotkey({hotkey_parts})")
+                import time
+                pyautogui.hotkey(*hotkey_parts)
+                time.sleep(0.3)
+                return keys
+
+        # Check if text contains non-ASCII (Chinese/CJK/Unicode) characters
+        has_unicode = any(ord(c) > 127 for c in keys)
+        if has_unicode:
+            # Use clipboard paste for Unicode text - SendInput can't handle CJK
+            logger.info(f"keyboard_input: using clipboard paste for Unicode text: '{keys}'")
+            import pyperclip
+            old_clipboard = None
+            try:
+                old_clipboard = pyperclip.paste()
+            except Exception:
+                pass
+            pyperclip.copy(keys)
+            import time
+            time.sleep(0.1)
+            # Ctrl+V to paste
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(0.2)
+            # Restore old clipboard if possible
+            if old_clipboard is not None:
+                try:
+                    import time
+                    time.sleep(0.1)
+                    pyperclip.copy(old_clipboard)
+                except Exception:
+                    pass
+            return keys
+
+        # For regular ASCII text, use standard type_keys
         keys = TextTransformer.transform_text(keys, "all")
 
-        if control_focus:
-            self.control.set_focus()
+        if control_focus and self.control:
+            try:
+                self.control.set_focus()
+            except Exception:
+                pass
             self.atomic_execution("type_keys", {"keys": keys})
         else:
             self.application.type_keys(keys=keys)

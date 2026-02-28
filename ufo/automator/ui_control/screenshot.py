@@ -109,11 +109,42 @@ class DesktopPhotographer(Photographer):
 
     def capture(self, save_path: str = None, scalar: List[int] = None) -> Image.Image:
         """
-        Capture a screenshot.
+        Capture a screenshot with fallback methods.
         :param save_path: The path to save the screenshot.
         :return: The screenshot.
         """
-        screenshot = ImageGrab.grab(all_screens=self.all_screens)
+        screenshot = None
+
+        # Method 1: PIL ImageGrab
+        try:
+            screenshot = ImageGrab.grab(all_screens=self.all_screens)
+        except OSError as e:
+            logger.warning(f"ImageGrab.grab() failed: {e}, trying fallback methods...")
+
+        # Method 2: pyautogui.screenshot() as fallback
+        if screenshot is None:
+            try:
+                import pyautogui
+                screenshot = pyautogui.screenshot()
+                logger.info("Fallback to pyautogui.screenshot() succeeded.")
+            except Exception as e2:
+                logger.warning(f"pyautogui.screenshot() also failed: {e2}")
+
+        # Method 3: Win32 API as last resort
+        if screenshot is None:
+            try:
+                import ctypes
+                from ctypes import wintypes
+                user32 = ctypes.windll.user32
+                w = user32.GetSystemMetrics(0)
+                h = user32.GetSystemMetrics(1)
+                # Create a blank image as placeholder with screen dimensions
+                screenshot = Image.new("RGB", (w, h), (0, 0, 0))
+                logger.warning(f"Using blank {w}x{h} placeholder screenshot.")
+            except Exception as e3:
+                logger.error(f"All screenshot methods failed: {e3}")
+                screenshot = Image.new("RGB", (1920, 1080), (0, 0, 0))
+
         if scalar is not None:
             screenshot = self.rescale_image(screenshot, scalar)
         if save_path is not None and screenshot is not None:
@@ -1126,10 +1157,13 @@ class PhotographerFacade:
 
         return merged_target_list
 
+    # Performance: max image dimension for LLM encoding (reduces base64 size & API latency)
+    _MAX_LLM_IMAGE_DIMENSION = 1920
+
     @classmethod
     def encode_image(cls, image: Image.Image, mime_type: Optional[str] = None) -> str:
         """
-        Encode an image to base64 string.
+        Encode an image to base64 string, with automatic downscaling for performance.
         :param image: The image to encode.
         :param mime_type: The mime type of the image.
         :return: The base64 string.
@@ -1139,31 +1173,36 @@ class PhotographerFacade:
             return cls._empty_image_string
 
         try:
+            # --- Performance: downscale large images before encoding ---
+            w, h = image.size
+            max_dim = cls._MAX_LLM_IMAGE_DIMENSION
+            if max(w, h) > max_dim:
+                scale = max_dim / max(w, h)
+                new_w, new_h = int(w * scale), int(h * scale)
+                image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                logger.info(f"Downscaled image from {w}x{h} to {new_w}x{new_h} for LLM encoding")
+
             buffered = BytesIO()
 
-            # Ensure image is in a valid mode for PNG saving
+            # Ensure image is in a valid mode
             if image.mode not in ["RGB", "RGBA", "L", "P"]:
-                # Convert to RGB if mode is not supported
                 image = image.convert("RGB")
 
-            # Handle different image modes for better compatibility
-            if mime_type and "jpeg" in mime_type.lower():
-                # For JPEG, convert RGBA to RGB (remove alpha channel)
-                if image.mode in ["RGBA", "LA"]:
-                    # Create a white background
+            # Use JPEG by default for smaller size (unless caller requests PNG)
+            use_jpeg = mime_type is None or (mime_type and "jpeg" in mime_type.lower())
+            if use_jpeg:
+                if image.mode in ["RGBA", "LA", "P"]:
                     background = Image.new("RGB", image.size, (255, 255, 255))
                     if image.mode == "RGBA":
-                        background.paste(
-                            image, mask=image.split()[-1]
-                        )  # Use alpha channel as mask
+                        background.paste(image, mask=image.split()[-1])
                     else:
-                        background.paste(image)
+                        background.paste(image.convert("RGBA"), mask=image.convert("RGBA").split()[-1])
                     image = background
-                image.save(buffered, format="JPEG", quality=95, optimize=True)
-                if mime_type is None:
-                    mime_type = "image/jpeg"
+                elif image.mode != "RGB":
+                    image = image.convert("RGB")
+                image.save(buffered, format="JPEG", quality=80, optimize=True)
+                mime_type = "image/jpeg"
             else:
-                # Default to PNG
                 image.save(buffered, format="PNG", optimize=True)
                 if mime_type is None:
                     mime_type = "image/png"

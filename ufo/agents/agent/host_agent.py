@@ -278,7 +278,13 @@ class HostAgent(BasicAgent):
         Provide the context for the agent.
         :param context: The context for the agent.
         """
-        await self._load_mcp_context(context)
+        try:
+            if ufo_config.system.get("USE_MCP", True):
+                await self._load_mcp_context(context)
+            else:
+                self.logger.info("MCP disabled, skipping MCP context loading.")
+        except Exception as e:
+            self.logger.warning(f"MCP context loading failed (non-fatal): {e}")
 
     async def _load_mcp_context(self, context: Context) -> None:
         """

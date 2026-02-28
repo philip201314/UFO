@@ -491,7 +491,19 @@ class AppAgent(BasicAgent):
             db_path = os.path.join(demonstration_path, "demonstration_db")
             self.build_human_demonstration_retriever(db_path)
 
-        await self._load_mcp_context(context)
+        try:
+            if ufo_config.system.get("USE_MCP", True):
+                await self._load_mcp_context(context)
+            else:
+                self.logger.info("MCP disabled, initializing empty API prompt template for AppAgent.")
+                self.prompter.create_api_prompt_template(tools=[])
+        except Exception as e:
+            self.logger.warning(f"MCP context loading failed (non-fatal): {e}")
+            # Ensure prompt template is always initialized even on failure
+            try:
+                self.prompter.create_api_prompt_template(tools=[])
+            except Exception:
+                pass
 
     async def _load_mcp_context(self, context: Context) -> None:
         """

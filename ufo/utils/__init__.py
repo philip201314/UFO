@@ -77,6 +77,32 @@ def check_json_format(string: str) -> bool:
     return True
 
 
+def _normalize_keys(obj: Any) -> Any:
+    """
+    Recursively normalize JSON keys: convert first-letter-uppercase keys
+    (e.g. 'Observation') to snake_case/lowercase (e.g. 'observation').
+    This ensures compatibility with Pydantic models when LLMs (like Qwen)
+    return capitalized keys.
+    """
+    if isinstance(obj, dict):
+        normalized = {}
+        for k, v in obj.items():
+            # Convert CamelCase / PascalCase to snake_case for known fields
+            # e.g. "Observation" -> "observation", "CurrentSubtask" -> "current_subtask"
+            new_key = k
+            if k and k[0].isupper():
+                # Simple lowercase first char for single-word keys
+                new_key = k[0].lower() + k[1:]
+                # Handle CamelCase -> snake_case (e.g. "CurrentSubtask" -> "current_subtask")
+                import re
+                new_key = re.sub(r'(?<!^)(?=[A-Z])', '_', new_key).lower()
+            normalized[new_key] = _normalize_keys(v)
+        return normalized
+    elif isinstance(obj, list):
+        return [_normalize_keys(item) for item in obj]
+    return obj
+
+
 def json_parser(json_string: str) -> Dict[str, Any]:
     """
     Parse json string to json object.
@@ -84,11 +110,33 @@ def json_parser(json_string: str) -> Dict[str, Any]:
     :return: The json object.
     """
 
+    # Strip whitespace
+    json_string = json_string.strip()
+
     # Remove the ```json and ``` at the beginning and end of the string if exists.
     if json_string.startswith("```json"):
-        json_string = json_string[7:-3]
+        json_string = json_string[7:]
+    elif json_string.startswith("```"):
+        json_string = json_string[3:]
+    if json_string.endswith("```"):
+        json_string = json_string[:-3]
 
-    return json.loads(json_string)
+    json_string = json_string.strip()
+
+    # Try to find JSON object in the string if direct parse fails
+    try:
+        result = json.loads(json_string)
+    except json.JSONDecodeError:
+        # Try to extract JSON from the string (Qwen sometimes adds extra text)
+        import re
+        match = re.search(r'\{[\s\S]*\}', json_string)
+        if match:
+            result = json.loads(match.group())
+        else:
+            raise
+
+    # Normalize keys for LLMs that return capitalized keys (e.g. Qwen)
+    return _normalize_keys(result)
 
 
 def is_json_serializable(obj: Any) -> bool:

@@ -59,8 +59,16 @@ class BaseOpenAIService(BaseService):
 
         self.model = self.config_llm["API_MODEL"]
 
-        # Try to automatically fix some config errors
-        while True:
+        # Skip structured output probe for known-incompatible endpoints
+        # (LLM Nexus proxy, DashScope, etc.) — saves ~150s startup time
+        skip_probe = self.config.get("SKIP_JSON_SCHEMA_PROBE", False)
+        if skip_probe:
+            self.logger.info(
+                f"SKIP_JSON_SCHEMA_PROBE=True, using text mode for {self.model}."
+            )
+            self.config_llm["JSON_SCHEMA"] = False
+            self.json_schema_enabled = False
+        else:
             try:
                 response = self.client.beta.chat.completions.parse(
                     model=self.model,
@@ -76,9 +84,14 @@ class BaseOpenAIService(BaseService):
                     self.logger.info(
                         f"Model {self.model} does not support Structured JSON Output feature. Switching to text mode.",
                     )
-                    self.config_llm["JSON_SCHEMA"] = False
-                    self.json_schema_enabled = False
-            break  # Exit the loop if no exception is raised
+                self.config_llm["JSON_SCHEMA"] = False
+                self.json_schema_enabled = False
+            except Exception as e:
+                self.logger.warning(
+                    f"Structured output probe failed (non-fatal): {e}. Switching to text mode.",
+                )
+                self.config_llm["JSON_SCHEMA"] = False
+                self.json_schema_enabled = False
 
     def _chat_completion(
         self,
