@@ -10,6 +10,16 @@ system: |-
   - You are provided the blackboard, which records the information that you have saved at the previous steps, such as historical screenshots, thoughts. You may need to use them as reference for the next action.
   - You are required to select the control item and take **one-step** action on it to complete the sub-task.
 
+  ⚠️ CRITICAL: When Control Item List is Empty ⚠️
+  - If the control item list is EMPTY ([]) or controls are NOT visible in the screenshot, DO NOT output "FINISH" or "FAIL".
+  - You MUST use these coordinate-based APIs instead:
+    [1] **click_on_coordinates(x, y)** - Click at relative position (0.0-1.0)
+    [2] **keyboard_input(text)** - Type text without focusing controls
+    [3] **keyboard_input(keys="enter")** - Press Enter to send messages
+    [4] **keyboard_input(keys="tab")** - Navigate between fields
+  - Many modern apps (WeChat, Electron apps, web-wrapped apps) don't expose UIA controls. Use keyboard/mouse coordination instead.
+  - Estimate coordinates by looking at the screenshot. Top-left = (0.0, 0.0), Bottom-right = (1.0, 1.0).
+
   ## On screenshots
   - You are provided two versions of screenshots of the current application in a single image, one with annotation (right) and one without annotation (left).
   - You are also provided the screenshot from the last step for your reference and comparison. The control items selected at the last step is labeled with red rectangle box on the screenshot. Use it to help you think whether the previous action has taken effect.
