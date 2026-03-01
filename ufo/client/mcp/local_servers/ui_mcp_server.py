@@ -334,7 +334,10 @@ def create_app_action_mcp_server(*args, **kwargs) -> FastMCP:
         if control_verified:
             return result
         else:
-            true_name = ui_state.control_dict.get(id).element_info.name
+            control = ui_state.control_dict.get(id) if ui_state.control_dict else None
+            if control is None:
+                return result
+            true_name = control.element_info.name
             return f"Warning: The name of your chosen control id {id} is {true_name}, but the name argument is {name}. The action is performed on control {id}:{true_name}."
 
     @action_mcp.tool(tags={"AppAgent"}, exclude_args=[])
@@ -478,7 +481,10 @@ def create_app_action_mcp_server(*args, **kwargs) -> FastMCP:
         if control_verified:
             return result
         else:
-            true_name = ui_state.control_dict.get(id).element_info.name
+            control = ui_state.control_dict.get(id) if ui_state.control_dict else None
+            if control is None:
+                return result
+            true_name = control.element_info.name
             return f"Warning: The name of your chosen control id {id} is {true_name}, but the name argument is {name}. The action is performed on control {id}:{true_name}."
 
     @action_mcp.tool(tags={"AppAgent"}, exclude_args=[])
@@ -563,7 +569,10 @@ def create_app_action_mcp_server(*args, **kwargs) -> FastMCP:
         if control_verified:
             return result
         else:
-            true_name = ui_state.control_dict.get(id).element_info.name
+            control = ui_state.control_dict.get(id) if ui_state.control_dict else None
+            if control is None:
+                return result
+            true_name = control.element_info.name
             return f"Warning: The name of your chosen control id {id} is {true_name}, but the name argument is {name}. The action is performed on control {id}:{true_name}."
 
     @action_mcp.tool(tags={"AppAgent"}, exclude_args=[])
@@ -595,7 +604,10 @@ def create_app_action_mcp_server(*args, **kwargs) -> FastMCP:
             result = _execute_action(action)
             return result
         else:
-            true_name = ui_state.control_dict.get(id).element_info.name
+            control = ui_state.control_dict.get(id) if ui_state.control_dict else None
+            if control is None:
+                return _execute_action(action)
+            true_name = control.element_info.name
             return f"Warning: The name of your chosen control id {id} is {true_name}, but the name argument is {name}. The action is performed on control {id}:{true_name}."
 
     @action_mcp.tool(tags={"AppAgent"}, exclude_args=[])

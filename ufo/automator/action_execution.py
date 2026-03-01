@@ -101,6 +101,13 @@ class ActionExecutor:
 
         control_selected = control_dict.get(control_id, None)
 
+        if control_selected is None and control_id:
+            self.logger.warning(
+                f"Control '{control_id}' not found in control_dict "
+                f"(visual fallback mode). Action '{action.function}' will "
+                f"proceed with control=None."
+            )
+
         # If the control is selected, but not available, return an error.
         if control_selected is not None and not ActionExecutor._control_validation(
             control_selected
