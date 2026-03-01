@@ -81,14 +81,6 @@ class ControlReceiver(ReceiverBasic):
 
         import traceback
 
-        if self.control is None:
-            message = (
-                f"Control is None (visual fallback mode). Cannot call '{method_name}' on UIA control. "
-                f"Use coordinate-based actions (click_on_coordinates) or clipboard paste instead."
-            )
-            logger.warning(message)
-            return message
-
         try:
             method = getattr(self.control, method_name)
             result = method(**params)
@@ -106,23 +98,9 @@ class ControlReceiver(ReceiverBasic):
     def click_input(self, params: Dict[str, Union[str, bool]]) -> str:
         """
         Click the control element.
-        Falls back to clicking at the application window center when control is None (visual mode).
         :param params: The arguments of the click method.
         :return: The result of the click action.
         """
-
-        if self.control is None:
-            logger.warning(
-                "click_input: control is None (visual fallback mode), "
-                "falling back to click_on_coordinates at window center"
-            )
-            fallback_params = {
-                "x": 0.5,
-                "y": 0.5,
-                "button": params.get("button", "left"),
-                "double": params.get("double", False),
-            }
-            return self.click_on_coordinates(fallback_params)
 
         api_name = ufo_config.system.click_api
 
@@ -226,32 +204,12 @@ class ControlReceiver(ReceiverBasic):
     def set_edit_text(self, params: Dict[str, str]) -> str:
         """
         Set the edit text of the control element.
-        Falls back to clipboard paste when control is None (visual mode).
         :param params: The arguments of the set edit text method.
         :return: The result of the set edit text action.
         """
 
         text = params.get("text", "")
         inter_key_pause = ufo_config.system.input_text_inter_key_pause
-
-        if self.control is None:
-            logger.warning(
-                "set_edit_text: control is None (visual fallback mode), "
-                "falling back to clipboard paste"
-            )
-            self.application.set_focus()
-            time.sleep(0.2)
-            if params.get("clear_current_text", False):
-                pyautogui.hotkey("ctrl", "a")
-                time.sleep(0.1)
-                pyautogui.press("delete")
-                time.sleep(0.1)
-            import pyperclip
-            pyperclip.copy(text)
-            time.sleep(0.1)
-            pyautogui.hotkey("ctrl", "v")
-            time.sleep(0.2)
-            return f"Text '{text}' has been pasted via clipboard (visual fallback mode)."
 
         if params.get("clear_current_text", False):
             self.control.type_keys("^a", pause=inter_key_pause)
@@ -478,9 +436,6 @@ class ControlReceiver(ReceiverBasic):
         Get the text of the control element.
         :return: The text of the control element.
         """
-        if self.control is None:
-            logger.warning("texts: control is None (visual fallback mode), no text available")
-            return "No text available - control not found (visual fallback mode). Use screenshot to read text."
         return self.control.texts()
 
     def wheel_mouse_input(self, params: Dict[str, str]):
