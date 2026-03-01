@@ -46,9 +46,9 @@ class Photographer(ABC):
     @staticmethod
     def rescale_image(image: Image.Image, scaler: List[int]) -> Image.Image:
         """
-        Rescale an image.
+        Rescale an image (compress pixels, maintain aspect ratio, NO cropping).
         :param image: The image to rescale.
-        :param scale: The scale factor.
+        :param scaler: The max dimension [max_width, max_height].
         :return: The rescaled image.
         """
 
@@ -57,15 +57,13 @@ class Photographer(ABC):
         new_width = int(raw_width * scale_ratio)
         new_height = int(raw_height * scale_ratio)
 
-        resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        new_image = Image.new("RGB", scaler, (0, 0, 0))
-        new_image.paste(
-            resized_image,
-            (0, 0),
-        )
-
-        return new_image
+        # Only resize if needed (don't create black borders)
+        if scale_ratio < 1.0:
+            resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            return resized_image
+        else:
+            # Image is already smaller than max dimension, return as-is
+            return image
 
 
 class ControlPhotographer(Photographer):
