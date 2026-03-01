@@ -165,12 +165,21 @@ class UIServerState:
         self.logger.info(f"Available commands: {self.puppeteer.list_commands()}")
 
 
-def _verify_id(id: str, name: str, control_dict: Dict[str, UIAWrapper]):
+def _verify_id(id: str, name: str, control_dict: Dict[str, UIAWrapper], allow_visual_fallback: bool = False):
+    """
+    Verify control/window ID. 
+    When allow_visual_fallback=True and control_dict is empty, skip strict verification
+    and let visual model handle the interaction via screenshot understanding.
+    """
 
     if not id:
         raise ToolError("Window id is required for select_application_window")
 
     if not control_dict:
+        if allow_visual_fallback:
+            # Visual mode: let the model use screenshot to identify target
+            logging.warning(f"Control dict empty, using visual fallback for: {name}")
+            return True
         raise ToolError(
             "No application windows available. Please call get_desktop_app_info first."
         )
@@ -179,6 +188,10 @@ def _verify_id(id: str, name: str, control_dict: Dict[str, UIAWrapper]):
     control = control_dict.get(id)
 
     if not control:
+        if allow_visual_fallback:
+            # Visual mode: model may be using name-based identification
+            logging.warning(f"Control '{id}' not found, using visual fallback")
+            return True
         raise ToolError(
             f"Control with id '{id}' not found. Available control ids: {list(control_dict.keys())}"
         )
@@ -307,7 +320,8 @@ def create_app_action_mcp_server(*args, **kwargs) -> FastMCP:
         Click on a UI control element using the mouse. All type of controls elements are supported.
         """
 
-        control_verified = _verify_id(id, name, ui_state.control_dict)
+        # Use visual fallback when UIA control dict is empty (visual mode)
+        control_verified = _verify_id(id, name, ui_state.control_dict, allow_visual_fallback=True)
 
         action = ActionCommandInfo(
             function="click_input",
@@ -450,7 +464,8 @@ def create_app_action_mcp_server(*args, **kwargs) -> FastMCP:
         Type text in a control element.
         """
 
-        control_verified = _verify_id(id, name, ui_state.control_dict)
+        # Use visual fallback when UIA control dict is empty (visual mode)
+        control_verified = _verify_id(id, name, ui_state.control_dict, allow_visual_fallback=True)
 
         action = ActionCommandInfo(
             function="set_edit_text",
