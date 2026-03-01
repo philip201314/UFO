@@ -312,6 +312,7 @@ class SystemConfig:
 
     # ========== Image Performance ==========
     default_png_compress_level: int = 1
+    screenshot_max_dimension: int = 1920
 
     # ========== Save Options ==========
     save_ui_tree: bool = False

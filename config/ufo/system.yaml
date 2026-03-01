@@ -69,6 +69,7 @@ SCREENSHOT_TO_MEMORY: True  # Whether to allow the screenshot to memory
 
 # Image Performance
 DEFAULT_PNG_COMPRESS_LEVEL: 6  # Higher compression → smaller images → faster LLM calls (was 1)
+SCREENSHOT_MAX_DIMENSION: 1280  # Max dimension (width or height) before LLM encoding. Lower = faster API calls. (was 1920)
 
 # Save Options
 SAVE_UI_TREE: False  # Whether to save the UI tree at each step

@@ -31,6 +31,7 @@ ufo_config = get_ufo_config()
 logger = logging.getLogger(__name__)
 
 DEFAULT_PNG_COMPRESS_LEVEL = int(ufo_config.system.default_png_compress_level)
+SCREENSHOT_MAX_DIMENSION = int(ufo_config.system.screenshot_max_dimension)
 
 
 class Photographer(ABC):
@@ -1157,8 +1158,7 @@ class PhotographerFacade:
 
         return merged_target_list
 
-    # Performance: max image dimension for LLM encoding (reduces base64 size & API latency)
-    _MAX_LLM_IMAGE_DIMENSION = 1920
+    _MAX_LLM_IMAGE_DIMENSION = SCREENSHOT_MAX_DIMENSION
 
     @classmethod
     def encode_image(cls, image: Image.Image, mime_type: Optional[str] = None) -> str:
